@@ -274,17 +274,19 @@ export class HevyClient {
   }
 
   async createRoutineFolder(data: CreateFolderInput): Promise<RoutineFolder> {
-    return this.request<RoutineFolder>('/v1/routine_folders', {
+    const response = await this.request<{ routine_folder: RoutineFolder }>('/v1/routine_folders', {
       method: 'POST',
       body: JSON.stringify({ routine_folder: this.cleanPayload(data) }),
     });
+    return response.routine_folder;
   }
 
   async updateRoutineFolder(id: string, data: CreateFolderInput): Promise<RoutineFolder> {
-    return this.request<RoutineFolder>(`/v1/routine_folders/${encodeURIComponent(id)}`, {
+    const response = await this.request<{ routine_folder: RoutineFolder }>(`/v1/routine_folders/${encodeURIComponent(id)}`, {
       method: 'PUT',
       body: JSON.stringify({ routine_folder: this.cleanPayload(data) }),
     });
+    return response.routine_folder;
   }
 
   async deleteRoutineFolder(id: string): Promise<void> {
