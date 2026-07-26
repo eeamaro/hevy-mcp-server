@@ -263,10 +263,10 @@ export class HevyClient {
   // ===== Folder Methods =====
 
   async getRoutineFolders(): Promise<RoutineFolder[]> {
-    const response = await this.request<{ folders: RoutineFolder[] }>(
+    const response = await this.request<{ routine_folders: RoutineFolder[] }>(
       '/v1/routine_folders'
     );
-    return response.folders || [];
+    return response.routine_folders || [];
   }
 
   async getRoutineFolder(id: string): Promise<RoutineFolder> {
@@ -274,21 +274,17 @@ export class HevyClient {
   }
 
   async createRoutineFolder(data: CreateFolderInput): Promise<RoutineFolder> {
-    const response = await this.request<{ folder: RoutineFolder[] }>('/v1/routine_folders', {
+    return this.request<RoutineFolder>('/v1/routine_folders', {
       method: 'POST',
-      body: JSON.stringify({ folder: this.cleanPayload(data) }),
+      body: JSON.stringify({ routine_folder: this.cleanPayload(data) }),
     });
-    // API returns { folder: [{ ... }] }, extract first element
-    return response.folder[0];
   }
 
   async updateRoutineFolder(id: string, data: CreateFolderInput): Promise<RoutineFolder> {
-    const response = await this.request<{ folder: RoutineFolder[] }>(`/v1/routine_folders/${encodeURIComponent(id)}`, {
+    return this.request<RoutineFolder>(`/v1/routine_folders/${encodeURIComponent(id)}`, {
       method: 'PUT',
-      body: JSON.stringify({ folder: this.cleanPayload(data) }),
+      body: JSON.stringify({ routine_folder: this.cleanPayload(data) }),
     });
-    // API returns { folder: [{ ... }] }, extract first element
-    return response.folder[0];
   }
 
   async deleteRoutineFolder(id: string): Promise<void> {
