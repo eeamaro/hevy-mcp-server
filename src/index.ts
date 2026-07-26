@@ -39,21 +39,20 @@ async function main() {
     console.error('Initializing Hevy MCP Server...');
     console.error(`Transport mode: ${transport}`);
 
-    // Create the MCP server
-    const server = createHevyMCPServer({
+    const serverConfig = {
       apiKey,
       apiBaseUrl,
-    });
+    };
 
     // Initialize transport(s) based on configuration
     if (transport === 'stdio' || transport === 'both') {
       console.error('Starting stdio transport...');
-      await initializeStdioTransport(server);
+      await initializeStdioTransport(createHevyMCPServer(serverConfig));
     }
 
     if (transport === 'sse' || transport === 'both') {
       console.error('Starting SSE transport...');
-      await initializeSSETransport(server, {
+      await initializeSSETransport(() => createHevyMCPServer(serverConfig), {
         port,
         host,
         ssePath,

@@ -109,7 +109,7 @@ export class HevyClient {
   // ===== Workout Methods =====
 
   async getWorkouts(params: WorkoutQueryParams = {}): Promise<Workout[]> {
-    const { page = 0, pageSize = 10, startDate, endDate } = params;
+    const { page = 1, pageSize = 10, startDate, endDate } = params;
 
     const queryParams = new URLSearchParams({
       page: String(page),
@@ -171,7 +171,7 @@ export class HevyClient {
   // ===== Routine Methods =====
 
   async getRoutines(params: PaginationParams = {}): Promise<Routine[]> {
-    const { page = 0, pageSize = 50 } = params;
+    const { page = 1, pageSize = 10 } = params;
     const queryParams = new URLSearchParams({
       page: String(page),
       pageSize: String(pageSize),
@@ -183,7 +183,10 @@ export class HevyClient {
   }
 
   async getRoutine(id: string): Promise<Routine> {
-    return this.request<Routine>(`/v1/routines/${encodeURIComponent(id)}`);
+    const response = await this.request<{ routine: Routine }>(
+      `/v1/routines/${encodeURIComponent(id)}`
+    );
+    return response.routine;
   }
 
   async createRoutine(data: CreateRoutineInput): Promise<Routine> {
@@ -196,9 +199,13 @@ export class HevyClient {
   }
 
   async updateRoutine(id: string, data: UpdateRoutineInput): Promise<Routine> {
+    const { folder_id: _folderId, ...allowedData } = data as UpdateRoutineInput & {
+      folder_id?: string | null;
+    };
+
     const response = await this.request<{ routine: Routine[] }>(`/v1/routines/${encodeURIComponent(id)}`, {
       method: 'PUT',
-      body: JSON.stringify({ routine: this.cleanPayload(data) }),
+      body: JSON.stringify({ routine: this.cleanPayload(allowedData) }),
     });
     // API returns { routine: [{ ... }] }, extract first element
     return response.routine[0];
@@ -213,7 +220,7 @@ export class HevyClient {
   // ===== Exercise Methods =====
 
   async getExerciseTemplates(params: PaginationParams = {}): Promise<ExerciseTemplate[]> {
-    const { page = 0, pageSize = 50 } = params;
+    const { page = 1, pageSize = 50 } = params;
     const queryParams = new URLSearchParams({
       page: String(page),
       pageSize: String(pageSize),

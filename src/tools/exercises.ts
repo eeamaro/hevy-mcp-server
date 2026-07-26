@@ -21,13 +21,16 @@ export function getExerciseTools() {
         properties: {
           page: {
             type: 'number',
-            description: 'Page number for pagination (default: 0)',
-            default: 0,
+            description: 'Page number for pagination (default: 1)',
+            default: 1,
+            minimum: 1,
           },
           pageSize: {
             type: 'number',
             description: 'Number of exercises per page (default: 50, max: 100)',
             default: 50,
+            minimum: 1,
+            maximum: 100,
           },
         },
       },

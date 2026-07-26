@@ -99,12 +99,17 @@ export function formatRoutine(routine: Routine): string {
     lines.push('No exercises defined.');
   } else {
     routine.exercises.forEach((exercise, idx) => {
-      lines.push(`### ${idx + 1}. Exercise ID: ${exercise.exercise_template_id}`);
-      if (exercise.superset_id) {
+      const exerciseTitle = exercise.title || `Exercise ID: ${exercise.exercise_template_id}`;
+      lines.push(`### ${idx + 1}. ${exerciseTitle}`);
+      lines.push(`   ID: ${exercise.exercise_template_id}`);
+      if (exercise.superset_id !== undefined && exercise.superset_id !== null) {
         lines.push(`   *Superset ID: ${exercise.superset_id}*`);
       }
       if (exercise.notes) {
         lines.push(`   *Notes: ${exercise.notes}*`);
+      }
+      if (exercise.rest_seconds !== undefined && exercise.rest_seconds !== null) {
+        lines.push(`   *Rest: ${exercise.rest_seconds}s*`);
       }
 
       lines.push(`   **${exercise.sets.length} sets planned**`);
