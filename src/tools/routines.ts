@@ -6,7 +6,7 @@ import { formatRoutine, formatRoutineList } from '../utils/formatters.js';
 import {
   CreateRoutineInputSchema,
   UpdateRoutineInputSchema,
-  PaginationParamsSchema,
+  LimitedPaginationParamsSchema,
   safeValidateInput,
 } from '../utils/validators.js';
 
@@ -16,19 +16,22 @@ export function getRoutineTools() {
     {
       name: 'get-routines',
       description:
-        'Get a list of all saved workout routines/templates. Returns routine summaries including title, ID, and exercise count.',
+        'Get a paginated list of saved workout routines/templates. Returns routine summaries including title, ID, and exercise count.',
       inputSchema: {
         type: 'object',
         properties: {
           page: {
             type: 'number',
-            description: 'Page number for pagination (default: 0)',
-            default: 0,
+            description: 'Page number for pagination (default: 1)',
+            default: 1,
+            minimum: 1,
           },
           pageSize: {
             type: 'number',
-            description: 'Number of routines per page (default: 50, max: 100)',
-            default: 50,
+            description: 'Number of routines per page (default: 10, max: 10)',
+            default: 10,
+            minimum: 1,
+            maximum: 10,
           },
         },
       },
@@ -74,7 +77,7 @@ export function getRoutineTools() {
                   description: 'ID of the exercise template',
                 },
                 superset_id: {
-                  type: 'string',
+                  oneOf: [{ type: 'string' }, { type: 'number' }],
                   description: 'Optional superset ID to group exercises',
                 },
                 notes: {
@@ -115,6 +118,10 @@ export function getRoutineTools() {
                     },
                     required: ['type'],
                   },
+                },
+                rest_seconds: {
+                  type: 'number',
+                  description: 'Rest time after this exercise in seconds',
                 },
               },
               required: ['exercise_template_id', 'sets'],
@@ -127,7 +134,7 @@ export function getRoutineTools() {
     {
       name: 'update-routine',
       description:
-        'Update an existing routine. You can update title, folder, or exercises. Only provide fields you want to change.',
+        'Update an existing routine. You can update title or exercises. Only provide fields you want to change.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -138,10 +145,6 @@ export function getRoutineTools() {
           title: {
             type: 'string',
             description: 'New routine title',
-          },
-          folder_id: {
-            type: 'string',
-            description: 'New folder ID',
           },
           exercises: {
             type: 'array',
@@ -154,7 +157,7 @@ export function getRoutineTools() {
                   description: 'ID of the exercise template',
                 },
                 superset_id: {
-                  type: 'string',
+                  oneOf: [{ type: 'string' }, { type: 'number' }],
                   description: 'Optional superset ID to group exercises',
                 },
                 notes: {
@@ -195,6 +198,10 @@ export function getRoutineTools() {
                     },
                     required: ['type'],
                   },
+                },
+                rest_seconds: {
+                  type: 'number',
+                  description: 'Rest time after this exercise in seconds',
                 },
               },
               required: ['exercise_template_id', 'sets'],
@@ -227,7 +234,7 @@ export async function handleRoutineToolCall(request: any, client: HevyClient) {
     switch (request.params.name) {
         case 'get-routines': {
           const validation = safeValidateInput(
-            PaginationParamsSchema,
+            LimitedPaginationParamsSchema,
             request.params.arguments || {}
           );
 

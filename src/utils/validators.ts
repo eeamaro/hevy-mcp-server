@@ -21,6 +21,19 @@ const optionalString = () => {
     });
 };
 
+const optionalStringOrNumber = () => {
+  return z
+    .union([z.string(), z.number(), z.null(), z.undefined()])
+    .optional()
+    .nullable()
+    .transform((val) => {
+      if (val === 'undefined' || val === '' || val === undefined || val === 'null') {
+        return null;
+      }
+      return val;
+    });
+};
+
 // Sanitized string schema helper that also validates length
 const sanitizedString = (maxLength: number = 10000, minLength: number = 0) => {
   let schema = z.string();
@@ -43,7 +56,7 @@ export const ExerciseSetSchema = z.object({
 // Workout Exercise Schema
 export const WorkoutExerciseSchema = z.object({
   exercise_template_id: z.string(),
-  superset_id: optionalString().nullable(),
+  superset_id: optionalStringOrNumber().nullable(),
   notes: sanitizedString(5000).optional(),
   sets: z.array(ExerciseSetSchema),
 });
@@ -69,9 +82,10 @@ export const UpdateWorkoutInputSchema = z.object({
 // Routine Exercise Schema
 export const RoutineExerciseSchema = z.object({
   exercise_template_id: z.string(),
-  superset_id: optionalString().nullable(),
+  superset_id: optionalStringOrNumber().nullable(),
   notes: sanitizedString(5000).optional(),
   sets: z.array(ExerciseSetSchema),
+  rest_seconds: z.number().int().min(0).optional().nullable(),
 });
 
 // Create Routine Input Schema
@@ -84,7 +98,6 @@ export const CreateRoutineInputSchema = z.object({
 // Update Routine Input Schema
 export const UpdateRoutineInputSchema = z.object({
   title: sanitizedString(200, 1).optional(),
-  folder_id: optionalString(),
   exercises: z.array(RoutineExerciseSchema).optional(),
 });
 
@@ -95,12 +108,19 @@ export const CreateFolderInputSchema = z.object({
 
 // Pagination Params Schema
 export const PaginationParamsSchema = z.object({
-  page: z.number().int().min(0).optional(),
+  page: z.number().int().min(1).optional(),
   pageSize: z.number().int().min(1).max(100).optional(),
 });
 
+// Hevy caps most paginated endpoints at 10 items. Exercise templates are the
+// exception and continue to use PaginationParamsSchema's 100-item limit.
+export const LimitedPaginationParamsSchema = z.object({
+  page: z.number().int().min(1).optional(),
+  pageSize: z.number().int().min(1).max(10).optional(),
+});
+
 // Workout Query Params Schema
-export const WorkoutQueryParamsSchema = PaginationParamsSchema.extend({
+export const WorkoutQueryParamsSchema = LimitedPaginationParamsSchema.extend({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
 });

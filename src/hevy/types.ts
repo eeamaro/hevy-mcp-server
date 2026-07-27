@@ -19,7 +19,7 @@ export interface Workout {
 
 export interface WorkoutExercise {
   exercise_template_id: string;
-  superset_id?: string | null;
+  superset_id?: string | number | null;
   notes?: string;
   sets: ExerciseSet[];
 }
@@ -72,9 +72,11 @@ export interface Routine {
 
 export interface RoutineExercise {
   exercise_template_id: string;
-  superset_id?: string | null;
+  title?: string;
+  superset_id?: string | number | null;
   notes?: string;
   sets: RoutineSet[];
+  rest_seconds?: number | null;
 }
 
 export interface RoutineSet {
@@ -94,7 +96,6 @@ export interface CreateRoutineInput {
 
 export interface UpdateRoutineInput {
   title?: string;
-  folder_id?: string | null;
   exercises?: RoutineExercise[];
 }
 

@@ -23,14 +23,33 @@ export interface SSETransportConfig {
   httpsCertPath?: string;
 }
 
-// Store transports by sessionId
+// Store transports by sessionId for message routing
 const transports = new Map<string, StreamableHTTPServerTransport>();
 
+// Clean up expired sessions periodically
+const sessionCleanupTimer = setInterval(() => {
+  const now = Date.now();
+  const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+
+  for (const [sessionId, transport] of transports.entries()) {
+    const createdAt = Number(sessionId.split('_')[1]) || now;
+    if (now - createdAt > thirtyDays) {
+      void transport.close();
+      transports.delete(sessionId);
+      logger.sessionExpired(sessionId, 'inactivity');
+    }
+  }
+}, 60 * 60 * 1000);
+sessionCleanupTimer.unref();
+
+type ServerFactory = () => Server;
+
 export function createSSETransport(
-  server: Server,
+  createServer: ServerFactory,
   config: SSETransportConfig
 ): express.Application {
   const app = express();
+  app.set('trust proxy', 1);
   const isProduction = process.env.NODE_ENV === 'production';
 
   app.use(
@@ -67,8 +86,10 @@ export function createSSETransport(
   // CORS
   app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, HEAD, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, mcp-session-id');
+    res.setHeader('Access-Control-Expose-Headers', 'mcp-session-id');
+
     if (req.method === 'OPTIONS') {
       res.sendStatus(200);
       return;
@@ -99,7 +120,7 @@ export function createSSETransport(
     });
   }
 
-  // Health check
+  // Health check endpoint
   app.get('/health', (req: Request, res: Response) => {
     res.json({
       status: 'healthy',
@@ -108,70 +129,114 @@ export function createSSETransport(
     });
   });
 
-  // MCP endpoint — Streamable HTTP (POST)
-  app.post(config.ssePath, async (req: Request, res: Response) => {
+  app.head(config.ssePath, (_req: Request, res: Response) => {
+    res.status(200).end();
+  });
+
+  // Streamable HTTP endpoint for remote MCP clients.
+  app.all(config.ssePath, async (req: Request, res: Response) => {
+    const sessionId = req.headers['mcp-session-id'] as string | undefined;
+
     try {
-      const sessionId = req.headers['mcp-session-id'] as string | undefined;
-      let transport: StreamableHTTPServerTransport;
+      if (req.method === 'POST') {
+        let transport = sessionId ? transports.get(sessionId) : undefined;
 
-      if (sessionId && transports.has(sessionId)) {
-        // Resume existing session
-        transport = transports.get(sessionId)!;
-      } else if (!sessionId && isInitializeRequest(req.body)) {
-        // New session — create transport and connect server
-        transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => randomUUID(),
-          onsessioninitialized: (newSessionId) => {
-            transports.set(newSessionId, transport);
-            logger.info('Session initialized', { sessionId: newSessionId });
-          },
-        });
+        if (sessionId && !transport) {
+          res.status(404).json({
+            jsonrpc: '2.0',
+            error: { code: -32000, message: 'Session not found. Start a new MCP session.' },
+            id: null,
+          });
+          return;
+        }
 
-        transport.onclose = () => {
-          const sid = transport.sessionId;
-          if (sid) {
-            transports.delete(sid);
-            logger.info('Session closed', { sessionId: sid });
-          }
-        };
+        if (!transport && !sessionId && isInitializeRequest(req.body)) {
+          transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            onsessioninitialized: (id) => {
+              transports.set(id, transport!);
+              logger.sessionCreated(id, req.ip);
+              logger.info('Transport stored for session', { sessionId: id });
+            },
+            onsessionclosed: (id) => {
+              transports.delete(id);
+              logger.info('Session closed', { sessionId: id });
+            },
+          });
 
-        await server.connect(transport);
-      } else {
-        res.status(400).json({
-          error: 'Bad request',
-          message: 'Missing mcp-session-id header or not an initialize request',
-        });
+          transport.onclose = () => {
+            const id = transport?.sessionId;
+            if (id) {
+              transports.delete(id);
+            }
+          };
+
+          // MCP Server owns client-specific capabilities and request routing.
+          // Reusing one Server across transports lets a newer session replace
+          // callbacks for an older one, leaving older tool calls hung forever.
+          const sessionServer = createServer();
+          await sessionServer.connect(transport);
+        } else if (!transport) {
+          res.status(400).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32000,
+              message: 'Bad Request: No valid session ID or initialization request provided.',
+            },
+            id: null,
+          });
+          return;
+        }
+
+        logger.info('Handling MCP POST message', { sessionId: sessionId || 'new' });
+        await transport.handleRequest(req, res, req.body);
         return;
       }
 
-      await transport.handleRequest(req, res, req.body);
+      if (req.method === 'GET') {
+        const transport = sessionId ? transports.get(sessionId) : undefined;
+        if (!transport) {
+          res.status(400).json({
+            jsonrpc: '2.0',
+            error: { code: -32000, message: 'Missing or invalid session ID for MCP stream.' },
+            id: null,
+          });
+          return;
+        }
+
+        logger.info('SSE stream opened for MCP session', { sessionId });
+        await transport.handleRequest(req, res);
+        return;
+      }
+
+      if (req.method === 'DELETE') {
+        const transport = sessionId ? transports.get(sessionId) : undefined;
+        if (!transport) {
+          res.status(404).json({
+            jsonrpc: '2.0',
+            error: { code: -32000, message: 'Session not found.' },
+            id: null,
+          });
+          return;
+        }
+
+        await transport.handleRequest(req, res);
+        return;
+      }
+
+      res.status(405).end();
     } catch (error) {
+      logger.error('Error handling MCP request', { path: req.path, method: req.method }, error as Error);
+
       const sanitizedMessage = sanitizeErrorMessage(error, isProduction);
-      res.status(500).json({ error: 'Internal server error', message: sanitizedMessage });
-    }
-  });
 
-  // GET — SSE stream for server-to-client notifications
-  app.get(config.ssePath, async (req: Request, res: Response) => {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    if (!sessionId || !transports.has(sessionId)) {
-      res.status(400).json({ error: 'Missing or invalid mcp-session-id' });
-      return;
+      if (!res.headersSent && !res.writableEnded) {
+        res.status(500).json({
+          error: 'Internal server error',
+          message: sanitizedMessage,
+        });
+      }
     }
-    const transport = transports.get(sessionId)!;
-    await transport.handleRequest(req, res);
-  });
-
-  // DELETE — explicit session termination
-  app.delete(config.ssePath, async (req: Request, res: Response) => {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined;
-    if (!sessionId || !transports.has(sessionId)) {
-      res.status(404).json({ error: 'Session not found' });
-      return;
-    }
-    const transport = transports.get(sessionId)!;
-    await transport.handleRequest(req, res);
-    transports.delete(sessionId);
   });
 
   // Global error handler
@@ -185,10 +250,10 @@ export function createSSETransport(
 }
 
 export async function initializeSSETransport(
-  server: Server,
+  createServer: ServerFactory,
   config: SSETransportConfig
 ): Promise<void> {
-  const app = createSSETransport(server, config);
+  const app = createSSETransport(createServer, config);
 
   return new Promise((resolve, reject) => {
     try {
